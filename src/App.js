@@ -16,7 +16,12 @@ import {
   AppBar,
   Toolbar,
   Grid,
-  Tooltip
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -33,6 +38,7 @@ function App() {
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(true);
   const [currentConnection, setCurrentConnection] = useState(null);
   const [isReversedLayout, setIsReversedLayout] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, key: null });
 
   const loadKeys = async () => {
     const result = await ipcRenderer.invoke('redis-keys');
@@ -64,8 +70,15 @@ function App() {
     }
   };
 
-  const handleDelete = async (key) => {
-    const result = await ipcRenderer.invoke('redis-delete', key);
+  const handleDelete = async (keyToDelete) => {
+    setDeleteDialog({ open: true, key: keyToDelete });
+  };
+
+  const confirmDelete = async () => {
+    const keyToDelete = deleteDialog.key;
+    setDeleteDialog({ open: false, key: null });
+    
+    const result = await ipcRenderer.invoke('redis-delete', keyToDelete);
     if (result.success) {
       setNotification({ open: true, message: 'Key deleted successfully!', severity: 'success' });
       loadKeys();
@@ -108,84 +121,6 @@ function App() {
     );
   }
 
-  const KeyListPanel = () => (
-    <Paper sx={{ p: 3, height: '100%' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6">
-          Redis Keys
-        </Typography>
-      </Box>
-      <List>
-        {keys.map((key) => (
-          <ListItem key={key}>
-            <ListItemText 
-              primary={key} 
-              sx={{
-                wordBreak: 'break-all'
-              }}
-            />
-            <ListItemSecondaryAction>
-              <IconButton edge="end" onClick={() => handleEdit(key)}>
-                <EditIcon />
-              </IconButton>
-              <IconButton edge="end" onClick={() => handleDelete(key)}>
-                <DeleteIcon />
-              </IconButton>
-            </ListItemSecondaryAction>
-          </ListItem>
-        ))}
-      </List>
-    </Paper>
-  );
-
-  const EditPanel = () => (
-    <Paper sx={{ p: 3, height: '100%' }}>
-      <Typography variant="h6" gutterBottom>
-        {editMode ? 'Edit Key' : 'Create New Key'}
-      </Typography>
-      <Box component="form" onSubmit={handleSubmit}>
-        <TextField
-          fullWidth
-          label="Key"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          margin="normal"
-        />
-        <TextField
-          fullWidth
-          label="Value"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          margin="normal"
-          multiline
-          rows={4}
-        />
-        <Button
-          type="submit"
-          variant="contained"
-          color="primary"
-          sx={{ mt: 2 }}
-        >
-          {editMode ? 'Update' : 'Save'}
-        </Button>
-        {editMode && (
-          <Button
-            variant="outlined"
-            color="secondary"
-            sx={{ mt: 2, ml: 2 }}
-            onClick={() => {
-              setEditMode(false);
-              setKey('');
-              setValue('');
-            }}
-          >
-            Cancel
-          </Button>
-        )}
-      </Box>
-    </Paper>
-  );
-
   return (
     <>
       <AppBar position="static">
@@ -217,10 +152,79 @@ function App() {
       <Container maxWidth="xl" sx={{ mt: 4 }}>
         <Grid container spacing={3}>
           <Grid item xs={12} md={7} order={{ xs: 1, md: isReversedLayout ? 2 : 1 }}>
-            <KeyListPanel />
+            <Paper sx={{ p: 3, height: '100%' }}>
+              <Typography variant="h6" gutterBottom>
+                Redis Keys
+              </Typography>
+              <List>
+                {keys.map((keyItem) => (
+                  <ListItem key={keyItem}>
+                    <ListItemText 
+                      primary={keyItem} 
+                      sx={{
+                        wordBreak: 'break-all'
+                      }}
+                    />
+                    <ListItemSecondaryAction>
+                      <IconButton onClick={() => handleEdit(keyItem)}>
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton onClick={() => handleDelete(keyItem)}>
+                        <DeleteIcon />
+                      </IconButton>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+            </Paper>
           </Grid>
+
           <Grid item xs={12} md={5} order={{ xs: 2, md: isReversedLayout ? 1 : 2 }}>
-            <EditPanel />
+            <Paper sx={{ p: 3, height: '100%' }}>
+              <Typography variant="h6" gutterBottom>
+                {editMode ? 'Edit Key' : 'Create New Key'}
+              </Typography>
+              <Box component="form" onSubmit={handleSubmit}>
+                <TextField
+                  fullWidth
+                  label="Key"
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                  margin="normal"
+                />
+                <TextField
+                  fullWidth
+                  label="Value"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  margin="normal"
+                  multiline
+                  rows={4}
+                />
+                <Button
+                  type="submit"
+                  variant="contained"
+                  color="primary"
+                  sx={{ mt: 2 }}
+                >
+                  {editMode ? 'Update' : 'Save'}
+                </Button>
+                {editMode && (
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    sx={{ mt: 2, ml: 2 }}
+                    onClick={() => {
+                      setEditMode(false);
+                      setKey('');
+                      setValue('');
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </Box>
+            </Paper>
           </Grid>
         </Grid>
 
@@ -229,6 +233,36 @@ function App() {
           onClose={() => setConnectionDialogOpen(false)}
           onConnect={handleConnectionSuccess}
         />
+
+        <Dialog
+          open={deleteDialog.open}
+          onClose={() => setDeleteDialog({ open: false, key: null })}
+        >
+          <DialogTitle>Confirm Delete</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              Are you sure you want to delete the key <Box component="span" sx={{ fontWeight: 'bold' }}>{deleteDialog.key}</Box>?
+              <br />
+              This action cannot be undone.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button 
+              onClick={() => setDeleteDialog({ open: false, key: null })}
+              color="inherit"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmDelete}
+              color="error"
+              variant="contained"
+              autoFocus
+            >
+              Delete
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         <Snackbar
           open={notification.open}
