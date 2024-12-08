@@ -16,6 +16,28 @@ A modern, cross-platform Redis client built with Electron and React. Features a 
 - 🔐 Support for Redis authentication
 - 💻 Cross-platform support (macOS, Windows, Linux)
 
+## Installation
+
+### macOS
+
+1. Download the latest `.dmg` file from the [Releases](https://github.com/datmt/redis-crud-client/releases) page
+2. Double-click the downloaded `.dmg` file
+3. Drag the Redis Client app to your Applications folder
+4. When first opening the app, you might see a message saying "Redis Client.app is damaged"
+   - This happens because the app isn't signed with an Apple Developer certificate
+   - To fix this, open Terminal and run:
+     ```bash
+     xattr -cr "/Applications/Redis Client.app"
+     ```
+   - Try opening the app again
+5. If you see a security warning, go to System Preferences > Security & Privacy and click "Open Anyway"
+
+### Windows
+Coming soon
+
+### Linux
+Coming soon
+
 ## Development
 
 ### Prerequisites
