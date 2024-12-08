@@ -21,11 +21,15 @@ import {
   DialogTitle,
   DialogContent,
   DialogContentText,
-  DialogActions
+  DialogActions,
+  CircularProgress,
+  InputAdornment
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import SearchIcon from '@mui/icons-material/Search';
+import MoreIcon from '@mui/icons-material/MoreHoriz';
 import ConnectionManager from './components/ConnectionManager';
 const { ipcRenderer } = window.require('electron');
 
@@ -39,67 +43,121 @@ function App() {
   const [currentConnection, setCurrentConnection] = useState(null);
   const [isReversedLayout, setIsReversedLayout] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState({ open: false, key: null });
-
-  const loadKeys = async () => {
-    const result = await ipcRenderer.invoke('redis-keys');
-    if (result.success) {
-      setKeys(result.data);
-    } else {
-      setNotification({ open: true, message: result.error, severity: 'error' });
-    }
-  };
+  const [searchPattern, setSearchPattern] = useState('*');
+  const [cursor, setCursor] = useState('0');
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (currentConnection) {
-      loadKeys();
+      loadKeys(true);
     }
   }, [currentConnection]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!key || !value) return;
+  const loadKeys = async (newSearch = false) => {
+    try {
+      setLoading(true);
+      if (newSearch) {
+        setCursor('0');
+        setKeys([]);
+      }
 
-    const result = await ipcRenderer.invoke('redis-set', { key, value });
-    if (result.success) {
-      setNotification({ open: true, message: 'Value saved successfully!', severity: 'success' });
-      setKey('');
-      setValue('');
-      loadKeys();
-    } else {
-      setNotification({ open: true, message: result.error, severity: 'error' });
+      const currentCursor = newSearch ? '0' : cursor;
+      const result = await ipcRenderer.invoke('redis-scan', {
+        cursor: currentCursor,
+        pattern: searchPattern,
+        count: 50
+      });
+
+      if (result.success) {
+        const { cursor: newCursor, keys: newKeys, hasMore: more } = result.data;
+        setKeys(prevKeys => newSearch ? newKeys : [...prevKeys, ...newKeys]);
+        setCursor(newCursor);
+        setHasMore(more);
+      } else {
+        setNotification({ open: true, message: result.error, severity: 'error' });
+      }
+    } catch (error) {
+      setNotification({ open: true, message: error.message, severity: 'error' });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleDelete = async (keyToDelete) => {
+  const handleSearch = async (e) => {
+    if (e) e.preventDefault();
+    loadKeys(true);
+  };
+
+  const handleEdit = async (keyToEdit) => {
+    try {
+      const result = await ipcRenderer.invoke('redis-get', keyToEdit);
+      if (result.success) {
+        setKey(keyToEdit);
+        setValue(result.data || '');
+        setEditMode(true);
+      } else {
+        setNotification({ open: true, message: result.error, severity: 'error' });
+      }
+    } catch (error) {
+      setNotification({ open: true, message: error.message, severity: 'error' });
+    }
+  };
+
+  const handleDelete = (keyToDelete) => {
     setDeleteDialog({ open: true, key: keyToDelete });
   };
 
   const confirmDelete = async () => {
-    const keyToDelete = deleteDialog.key;
-    setDeleteDialog({ open: false, key: null });
-    
-    const result = await ipcRenderer.invoke('redis-delete', keyToDelete);
-    if (result.success) {
-      setNotification({ open: true, message: 'Key deleted successfully!', severity: 'success' });
-      loadKeys();
-    } else {
-      setNotification({ open: true, message: result.error, severity: 'error' });
+    try {
+      const result = await ipcRenderer.invoke('redis-delete', deleteDialog.key);
+      if (result.success) {
+        setKeys(prevKeys => prevKeys.filter(k => k !== deleteDialog.key));
+        setNotification({ open: true, message: 'Key deleted successfully', severity: 'success' });
+      } else {
+        setNotification({ open: true, message: result.error, severity: 'error' });
+      }
+    } catch (error) {
+      setNotification({ open: true, message: error.message, severity: 'error' });
+    } finally {
+      setDeleteDialog({ open: false, key: null });
     }
   };
 
-  const handleEdit = async (key) => {
-    const result = await ipcRenderer.invoke('redis-get', key);
-    if (result.success) {
-      setKey(key);
-      setValue(result.data);
-      setEditMode(true);
-    } else {
-      setNotification({ open: true, message: result.error, severity: 'error' });
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (!key || !value) {
+        setNotification({ open: true, message: 'Both key and value are required', severity: 'error' });
+        return;
+      }
+
+      const result = await ipcRenderer.invoke('redis-set', { key, value });
+      if (result.success) {
+        if (!editMode && !keys.includes(key)) {
+          setKeys(prevKeys => [...prevKeys, key]);
+        }
+        setNotification({ 
+          open: true, 
+          message: `Key ${editMode ? 'updated' : 'created'} successfully`, 
+          severity: 'success' 
+        });
+        if (editMode) {
+          setEditMode(false);
+        }
+        setKey('');
+        setValue('');
+      } else {
+        setNotification({ open: true, message: result.error, severity: 'error' });
+      }
+    } catch (error) {
+      setNotification({ open: true, message: error.message, severity: 'error' });
     }
   };
 
-  const handleConnectionSuccess = (connection) => {
+  const handleConnectionSuccess = async (connection) => {
     setCurrentConnection(connection);
+    setConnectionDialogOpen(false);
     setNotification({ 
       open: true, 
       message: `Connected to Redis at ${connection.host}:${connection.port}`, 
@@ -122,65 +180,86 @@ function App() {
   }
 
   return (
-    <>
+    <Container>
       <AppBar position="static">
         <Toolbar>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Redis CRUD Client
+            Redis Client - {currentConnection.name} ({currentConnection.host}:{currentConnection.port})
           </Typography>
-          <Typography variant="subtitle1" sx={{ mr: 2 }}>
-            Connected to: {currentConnection.name}
-          </Typography>
-          <Tooltip title="Switch Layout">
-            <IconButton 
-              color="inherit" 
-              onClick={toggleLayout}
-              sx={{ mr: 2 }}
-            >
-              <SwapHorizIcon />
-            </IconButton>
-          </Tooltip>
           <Button 
             color="inherit" 
             onClick={() => setConnectionDialogOpen(true)}
+            sx={{ mr: 2 }}
           >
             Manage Connections
           </Button>
+          <Tooltip title="Toggle Layout">
+            <IconButton color="inherit" onClick={toggleLayout}>
+              <SwapHorizIcon />
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
 
-      <Container maxWidth="xl" sx={{ mt: 4 }}>
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={7} order={{ xs: 1, md: isReversedLayout ? 2 : 1 }}>
-            <Paper sx={{ p: 3, height: '100%' }}>
-              <Typography variant="h6" gutterBottom>
-                Redis Keys
-              </Typography>
+      <Box sx={{ mt: 2 }}>
+        <Grid container spacing={2} direction={isReversedLayout ? 'row-reverse' : 'row'}>
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 2 }}>
+              <Box sx={{ mb: 2 }}>
+                <TextField
+                  fullWidth
+                  label="Search Keys"
+                  value={searchPattern}
+                  onChange={(e) => setSearchPattern(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && loadKeys(true)}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton onClick={() => loadKeys(true)}>
+                          <SearchIcon />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Box>
+              
               <List>
-                {keys.map((keyItem) => (
-                  <ListItem key={keyItem}>
-                    <ListItemText 
-                      primary={keyItem} 
-                      sx={{
-                        wordBreak: 'break-all'
-                      }}
-                    />
+                {keys.map((k) => (
+                  <ListItem key={k}>
+                    <ListItemText primary={k} />
                     <ListItemSecondaryAction>
-                      <IconButton onClick={() => handleEdit(keyItem)}>
+                      <IconButton edge="end" onClick={() => handleEdit(k)}>
                         <EditIcon />
                       </IconButton>
-                      <IconButton onClick={() => handleDelete(keyItem)}>
+                      <IconButton edge="end" onClick={() => handleDelete(k)}>
                         <DeleteIcon />
                       </IconButton>
                     </ListItemSecondaryAction>
                   </ListItem>
                 ))}
               </List>
+              
+              {loading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                  <CircularProgress />
+                </Box>
+              ) : hasMore && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                  <Button
+                    variant="outlined"
+                    onClick={() => loadKeys(false)}
+                    startIcon={<MoreIcon />}
+                  >
+                    Load More
+                  </Button>
+                </Box>
+              )}
             </Paper>
           </Grid>
 
-          <Grid item xs={12} md={5} order={{ xs: 2, md: isReversedLayout ? 1 : 2 }}>
-            <Paper sx={{ p: 3, height: '100%' }}>
+          <Grid item xs={12} md={8}>
+            <Paper sx={{ p: 2 }}>
               <Typography variant="h6" gutterBottom>
                 {editMode ? 'Edit Key' : 'Create New Key'}
               </Typography>
@@ -190,6 +269,7 @@ function App() {
                   label="Key"
                   value={key}
                   onChange={(e) => setKey(e.target.value)}
+                  disabled={editMode}
                   margin="normal"
                 />
                 <TextField
@@ -201,80 +281,69 @@ function App() {
                   multiline
                   rows={4}
                 />
-                <Button
-                  type="submit"
-                  variant="contained"
-                  color="primary"
-                  sx={{ mt: 2 }}
-                >
-                  {editMode ? 'Update' : 'Save'}
-                </Button>
-                {editMode && (
+                <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
                   <Button
-                    variant="outlined"
-                    color="secondary"
-                    sx={{ mt: 2, ml: 2 }}
-                    onClick={() => {
-                      setEditMode(false);
-                      setKey('');
-                      setValue('');
-                    }}
+                    type="submit"
+                    variant="contained"
+                    color="primary"
                   >
-                    Cancel
+                    {editMode ? 'Update' : 'Create'}
                   </Button>
-                )}
+                  {editMode && (
+                    <Button
+                      variant="outlined"
+                      onClick={() => {
+                        setEditMode(false);
+                        setKey('');
+                        setValue('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </Box>
               </Box>
             </Paper>
           </Grid>
         </Grid>
+      </Box>
 
-        <ConnectionManager
-          open={connectionDialogOpen}
-          onClose={() => setConnectionDialogOpen(false)}
-          onConnect={handleConnectionSuccess}
-        />
+      <Dialog
+        open={deleteDialog.open}
+        onClose={() => setDeleteDialog({ open: false, key: null })}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete key <strong>{deleteDialog.key}</strong>?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialog({ open: false, key: null })}>
+            Cancel
+          </Button>
+          <Button onClick={confirmDelete} color="error" autoFocus>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
 
-        <Dialog
-          open={deleteDialog.open}
-          onClose={() => setDeleteDialog({ open: false, key: null })}
-        >
-          <DialogTitle>Confirm Delete</DialogTitle>
-          <DialogContent>
-            <DialogContentText>
-              Are you sure you want to delete the key <Box component="span" sx={{ fontWeight: 'bold' }}>{deleteDialog.key}</Box>?
-              <br />
-              This action cannot be undone.
-            </DialogContentText>
-          </DialogContent>
-          <DialogActions>
-            <Button 
-              onClick={() => setDeleteDialog({ open: false, key: null })}
-              color="inherit"
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={confirmDelete}
-              color="error"
-              variant="contained"
-              autoFocus
-            >
-              Delete
-            </Button>
-          </DialogActions>
-        </Dialog>
+      <ConnectionManager
+        open={connectionDialogOpen}
+        onClose={() => setConnectionDialogOpen(false)}
+        onConnect={handleConnectionSuccess}
+      />
 
-        <Snackbar
-          open={notification.open}
-          autoHideDuration={6000}
-          onClose={() => setNotification({ ...notification, open: false })}
-        >
-          <Alert severity={notification.severity}>
-            {notification.message}
-          </Alert>
-        </Snackbar>
-      </Container>
-    </>
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
+        onClose={() => setNotification({ ...notification, open: false })}
+      >
+        <Alert severity={notification.severity} onClose={() => setNotification({ ...notification, open: false })}>
+          {notification.message}
+        </Alert>
+      </Snackbar>
+    </Container>
   );
 }
 

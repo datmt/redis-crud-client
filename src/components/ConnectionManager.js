@@ -46,6 +46,32 @@ function ConnectionManager({ open, onClose, onConnect }) {
     }
 
     await ipcRenderer.invoke('save-connection', currentConnection);
+    await loadConnections();
+    resetForm();
+  };
+
+  const handleConnect = async (connection) => {
+    try {
+      const result = await ipcRenderer.invoke('connect-redis', connection);
+      if (result.success) {
+        onConnect(connection);
+      }
+    } catch (error) {
+      console.error('Connection error:', error);
+    }
+  };
+
+  const handleDelete = async (name) => {
+    await ipcRenderer.invoke('delete-connection', name);
+    await loadConnections();
+  };
+
+  const handleEdit = (connection) => {
+    setCurrentConnection(connection);
+    setEditMode(true);
+  };
+
+  const resetForm = () => {
     setCurrentConnection({
       name: '',
       host: 'localhost',
@@ -54,32 +80,15 @@ function ConnectionManager({ open, onClose, onConnect }) {
       username: ''
     });
     setEditMode(false);
-    loadConnections();
-  };
-
-  const handleEdit = (connection) => {
-    setCurrentConnection(connection);
-    setEditMode(true);
-  };
-
-  const handleDelete = async (name) => {
-    await ipcRenderer.invoke('delete-connection', name);
-    loadConnections();
-  };
-
-  const handleConnect = async (connection) => {
-    const result = await ipcRenderer.invoke('connect-redis', connection);
-    if (result.success) {
-      onConnect(connection);
-      onClose();
-    }
   };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Manage Redis Connections</DialogTitle>
+      <DialogTitle>
+        Redis Connections
+      </DialogTitle>
       <DialogContent>
-        <Box sx={{ mb: 3 }}>
+        <Box sx={{ mb: 2 }}>
           <Typography variant="h6" gutterBottom>
             {editMode ? 'Edit Connection' : 'New Connection'}
           </Typography>
@@ -119,15 +128,20 @@ function ConnectionManager({ open, onClose, onConnect }) {
             onChange={(e) => setCurrentConnection({ ...currentConnection, password: e.target.value })}
             margin="dense"
           />
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleSave}
-            startIcon={<AddIcon />}
-            sx={{ mt: 1 }}
-          >
-            {editMode ? 'Update' : 'Add'} Connection
-          </Button>
+          <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+            <Button
+              variant="contained"
+              onClick={handleSave}
+              startIcon={<AddIcon />}
+            >
+              {editMode ? 'Update' : 'Add'}
+            </Button>
+            {editMode && (
+              <Button onClick={resetForm}>
+                Cancel
+              </Button>
+            )}
+          </Box>
         </Box>
 
         <Divider sx={{ my: 2 }} />
@@ -143,14 +157,14 @@ function ConnectionManager({ open, onClose, onConnect }) {
                 secondary={`${conn.host}:${conn.port}`}
               />
               <ListItemSecondaryAction>
-                <IconButton edge="end" onClick={() => handleEdit(conn)}>
+                <IconButton edge="end" onClick={() => handleEdit(conn)} sx={{ mr: 1 }}>
                   <EditIcon />
                 </IconButton>
                 <IconButton edge="end" onClick={() => handleDelete(conn.name)}>
                   <DeleteIcon />
                 </IconButton>
                 <Button
-                  variant="outlined"
+                  variant="contained"
                   size="small"
                   onClick={() => handleConnect(conn)}
                   sx={{ ml: 1 }}
