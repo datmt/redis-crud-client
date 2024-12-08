@@ -38,6 +38,7 @@ import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import MoreIcon from '@mui/icons-material/MoreVert';
+import ClearIcon from '@mui/icons-material/Clear';
 import ConnectionManager from './components/ConnectionManager';
 const { ipcRenderer } = window.require('electron');
 
@@ -313,6 +314,44 @@ function App() {
                 <Typography variant="body2" color="text.secondary">
                   Showing {keys.length} of {totalKeys} keys
                 </Typography>
+              </Box>
+
+              <Box sx={{ mb: 2 }}>
+                <TextField
+                  fullWidth
+                  label="Search Keys"
+                  value={searchPattern}
+                  onChange={(e) => setSearchPattern(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && loadKeys(true)}
+                  placeholder="Use * as wildcard (e.g., user:*, *name)"
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <Tooltip title="Search">
+                          <IconButton 
+                            onClick={() => loadKeys(true)}
+                            disabled={loading}
+                          >
+                            <SearchIcon />
+                          </IconButton>
+                        </Tooltip>
+                        {searchPattern && (
+                          <Tooltip title="Clear search">
+                            <IconButton
+                              onClick={() => {
+                                setSearchPattern('');
+                                loadKeys(true);
+                              }}
+                              disabled={loading}
+                            >
+                              <ClearIcon />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </InputAdornment>
+                    ),
+                  }}
+                />
               </Box>
               
               <List>
