@@ -114,23 +114,6 @@ ipcMain.handle('connect-redis', async (event, connection) => {
 });
 
 // Redis CRUD operations
-ipcMain.handle('redis-scan', async (event, { cursor = '0', pattern = '*', count = KEYS_PER_PAGE }) => {
-  try {
-    if (!redis) throw new Error('Not connected to Redis');
-    const [newCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', count);
-    return { 
-      success: true, 
-      data: {
-        cursor: newCursor,
-        keys,
-        hasMore: newCursor !== '0'
-      }
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
 ipcMain.handle('redis-get', async (event, key) => {
   try {
     if (!redis) throw new Error('Not connected to Redis');
@@ -313,6 +296,30 @@ ipcMain.handle('redis-disconnect', async () => {
       redis = null;
     }
     return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('redis-keys', async (event, { pattern = '*', cursor = '0', count = 10 }) => {
+  try {
+    if (!redis) throw new Error('Not connected to Redis');
+    
+    // Get total key count first
+    const totalKeys = await redis.dbsize();
+    
+    // Scan for keys with cursor
+    const [newCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+    
+    return { 
+      success: true, 
+      data: {
+        keys,
+        cursor: newCursor,
+        totalKeys,
+        hasMore: newCursor !== '0'
+      }
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }

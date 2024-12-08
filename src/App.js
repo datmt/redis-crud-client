@@ -58,7 +58,9 @@ function App() {
   const [cursor, setCursor] = useState('0');
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [totalKeys, setTotalKeys] = useState(0);
   const [keyDetails, setKeyDetails] = useState({});
+  const KEYS_PER_PAGE = 10;
 
   useEffect(() => {
     if (currentConnection) {
@@ -69,34 +71,21 @@ function App() {
   const loadKeys = async (newSearch = false) => {
     try {
       setLoading(true);
-      if (newSearch) {
-        setCursor('0');
-        setKeys([]);
-      }
-
-      const currentCursor = newSearch ? '0' : cursor;
-      const result = await ipcRenderer.invoke('redis-scan', {
-        cursor: currentCursor,
-        pattern: searchPattern,
-        count: 50
+      const result = await ipcRenderer.invoke('redis-keys', {
+        pattern: searchPattern || '*',
+        cursor: newSearch ? '0' : cursor,
+        count: KEYS_PER_PAGE
       });
 
       if (result.success) {
-        const { cursor: newCursor, keys: newKeys, hasMore: more } = result.data;
+        const { keys: newKeys, cursor: newCursor, totalKeys: total, hasMore: more } = result.data;
         setKeys(prevKeys => newSearch ? newKeys : [...prevKeys, ...newKeys]);
         setCursor(newCursor);
         setHasMore(more);
+        setTotalKeys(total);
 
-        // Load details for each key
-        newKeys.forEach(async (key) => {
-          const details = await ipcRenderer.invoke('redis-get-details', key);
-          if (details.success) {
-            setKeyDetails(prev => ({
-              ...prev,
-              [key]: details.data
-            }));
-          }
-        });
+        // Load details for new keys
+        newKeys.forEach(loadKeyDetails);
       } else {
         setNotification({ open: true, message: result.error, severity: 'error' });
       }
@@ -318,24 +307,12 @@ function App() {
       <Box sx={{ mt: 2 }}>
         <Grid container spacing={2} direction={isReversedLayout ? 'row-reverse' : 'row'}>
           <Grid item xs={12} md={4}>
-            <Paper sx={{ p: 2 }}>
-              <Box sx={{ mb: 2 }}>
-                <TextField
-                  fullWidth
-                  label="Search Keys"
-                  value={searchPattern}
-                  onChange={(e) => setSearchPattern(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && loadKeys(true)}
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton onClick={() => loadKeys(true)}>
-                          <SearchIcon />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }}
-                />
+            <Paper sx={{ p: 2, mb: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">Keys</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Showing {keys.length} of {totalKeys} keys
+                </Typography>
               </Box>
               
               <List>
@@ -399,19 +376,16 @@ function App() {
                   </ListItem>
                 ))}
               </List>
-              
-              {loading ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-                  <CircularProgress />
-                </Box>
-              ) : hasMore && (
+
+              {hasMore && (
                 <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
                   <Button
                     variant="outlined"
                     onClick={() => loadKeys(false)}
-                    startIcon={<MoreIcon />}
+                    disabled={loading}
+                    startIcon={loading && <CircularProgress size={20} />}
                   >
-                    Load More
+                    {loading ? 'Loading...' : 'Load More'}
                   </Button>
                 </Box>
               )}
