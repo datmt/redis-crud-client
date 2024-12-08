@@ -23,7 +23,8 @@ import {
   DialogContentText,
   DialogActions,
   CircularProgress,
-  InputAdornment
+  InputAdornment,
+  Link
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -306,6 +307,36 @@ function App() {
             </Paper>
           </Grid>
         </Grid>
+      </Box>
+
+      <Box 
+        component="footer" 
+        sx={{ 
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          p: 2,
+          bgcolor: 'background.paper',
+          borderTop: 1,
+          borderColor: 'divider',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}
+      >
+        <Typography variant="body2" color="text.secondary">
+          Created by{' '}
+          <Link
+            href="https://datmt.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            color="primary"
+            underline="hover"
+          >
+            datmt.com
+          </Link>
+        </Typography>
       </Box>
 
       <Dialog

@@ -7,9 +7,38 @@
     "start": "electron .",
     "dev": "concurrently \"BROWSER=none npm run react-start\" \"wait-on http://localhost:3000 && electron .\"",
     "react-start": "react-scripts start",
-    "build": "react-scripts build",
+    "react-build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "build": "npm run react-build",
+    "package:mac": "electron-builder --mac",
+    "package:win": "electron-builder --win",
+    "package:linux": "electron-builder --linux",
+    "package:all": "electron-builder -mwl"
+  },
+  "build": {
+    "appId": "com.redis.electron.client",
+    "productName": "Redis Client",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "build/**/*",
+      "main.js",
+      "preload.js",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb", "rpm"],
+      "category": "Development"
+    }
   },
   "dependencies": {
     "@emotion/react": "^11.11.1",
@@ -24,6 +53,7 @@
   "devDependencies": {
     "concurrently": "^8.2.0",
     "electron": "^25.3.2",
+    "electron-builder": "^24.6.3",
     "wait-on": "^7.0.1"
   },
   "browserslist": {
