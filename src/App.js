@@ -14,10 +14,13 @@ import {
   Snackbar,
   Alert,
   AppBar,
-  Toolbar
+  Toolbar,
+  Grid,
+  Tooltip
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import ConnectionManager from './components/ConnectionManager';
 const { ipcRenderer } = window.require('electron');
 
@@ -29,6 +32,7 @@ function App() {
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(true);
   const [currentConnection, setCurrentConnection] = useState(null);
+  const [isReversedLayout, setIsReversedLayout] = useState(false);
 
   const loadKeys = async () => {
     const result = await ipcRenderer.invoke('redis-keys');
@@ -90,6 +94,10 @@ function App() {
     });
   };
 
+  const toggleLayout = () => {
+    setIsReversedLayout(!isReversedLayout);
+  };
+
   if (!currentConnection) {
     return (
       <ConnectionManager
@@ -99,6 +107,84 @@ function App() {
       />
     );
   }
+
+  const KeyListPanel = () => (
+    <Paper sx={{ p: 3, height: '100%' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h6">
+          Redis Keys
+        </Typography>
+      </Box>
+      <List>
+        {keys.map((key) => (
+          <ListItem key={key}>
+            <ListItemText 
+              primary={key} 
+              sx={{
+                wordBreak: 'break-all'
+              }}
+            />
+            <ListItemSecondaryAction>
+              <IconButton edge="end" onClick={() => handleEdit(key)}>
+                <EditIcon />
+              </IconButton>
+              <IconButton edge="end" onClick={() => handleDelete(key)}>
+                <DeleteIcon />
+              </IconButton>
+            </ListItemSecondaryAction>
+          </ListItem>
+        ))}
+      </List>
+    </Paper>
+  );
+
+  const EditPanel = () => (
+    <Paper sx={{ p: 3, height: '100%' }}>
+      <Typography variant="h6" gutterBottom>
+        {editMode ? 'Edit Key' : 'Create New Key'}
+      </Typography>
+      <Box component="form" onSubmit={handleSubmit}>
+        <TextField
+          fullWidth
+          label="Key"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          margin="normal"
+        />
+        <TextField
+          fullWidth
+          label="Value"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          margin="normal"
+          multiline
+          rows={4}
+        />
+        <Button
+          type="submit"
+          variant="contained"
+          color="primary"
+          sx={{ mt: 2 }}
+        >
+          {editMode ? 'Update' : 'Save'}
+        </Button>
+        {editMode && (
+          <Button
+            variant="outlined"
+            color="secondary"
+            sx={{ mt: 2, ml: 2 }}
+            onClick={() => {
+              setEditMode(false);
+              setKey('');
+              setValue('');
+            }}
+          >
+            Cancel
+          </Button>
+        )}
+      </Box>
+    </Paper>
+  );
 
   return (
     <>
@@ -110,6 +196,15 @@ function App() {
           <Typography variant="subtitle1" sx={{ mr: 2 }}>
             Connected to: {currentConnection.name}
           </Typography>
+          <Tooltip title="Switch Layout">
+            <IconButton 
+              color="inherit" 
+              onClick={toggleLayout}
+              sx={{ mr: 2 }}
+            >
+              <SwapHorizIcon />
+            </IconButton>
+          </Tooltip>
           <Button 
             color="inherit" 
             onClick={() => setConnectionDialogOpen(true)}
@@ -119,51 +214,15 @@ function App() {
         </Toolbar>
       </AppBar>
 
-      <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Paper sx={{ p: 3 }}>
-          <Box component="form" onSubmit={handleSubmit} sx={{ mb: 4 }}>
-            <TextField
-              fullWidth
-              label="Key"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              margin="normal"
-            />
-            <TextField
-              fullWidth
-              label="Value"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              margin="normal"
-              multiline
-              rows={4}
-            />
-            <Button
-              type="submit"
-              variant="contained"
-              color="primary"
-              sx={{ mt: 2 }}
-            >
-              {editMode ? 'Update' : 'Save'}
-            </Button>
-          </Box>
-
-          <List>
-            {keys.map((key) => (
-              <ListItem key={key}>
-                <ListItemText primary={key} />
-                <ListItemSecondaryAction>
-                  <IconButton edge="end" onClick={() => handleEdit(key)}>
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton edge="end" onClick={() => handleDelete(key)}>
-                    <DeleteIcon />
-                  </IconButton>
-                </ListItemSecondaryAction>
-              </ListItem>
-            ))}
-          </List>
-        </Paper>
+      <Container maxWidth="xl" sx={{ mt: 4 }}>
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={7} order={{ xs: 1, md: isReversedLayout ? 2 : 1 }}>
+            <KeyListPanel />
+          </Grid>
+          <Grid item xs={12} md={5} order={{ xs: 2, md: isReversedLayout ? 1 : 2 }}>
+            <EditPanel />
+          </Grid>
+        </Grid>
 
         <ConnectionManager
           open={connectionDialogOpen}
