@@ -236,7 +236,7 @@ ipcMain.handle('redis-set', async (event, { key, value, type, ttl }) => {
     }
 
     // Set TTL if specified
-    if (ttl > 0) {
+    if (ttl && ttl > 0) {
       await redis.expire(key, ttl);
     } else if (ttl === -1) {
       await redis.persist(key); // Remove TTL

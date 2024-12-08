@@ -28,7 +28,9 @@ import {
   Alert,
   AppBar,
   Toolbar,
-  Tooltip
+  Tooltip,
+  Chip,
+  Stack
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -56,6 +58,7 @@ function App() {
   const [cursor, setCursor] = useState('0');
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [keyDetails, setKeyDetails] = useState({});
 
   useEffect(() => {
     if (currentConnection) {
@@ -83,6 +86,17 @@ function App() {
         setKeys(prevKeys => newSearch ? newKeys : [...prevKeys, ...newKeys]);
         setCursor(newCursor);
         setHasMore(more);
+
+        // Load details for each key
+        newKeys.forEach(async (key) => {
+          const details = await ipcRenderer.invoke('redis-get-details', key);
+          if (details.success) {
+            setKeyDetails(prev => ({
+              ...prev,
+              [key]: details.data
+            }));
+          }
+        });
       } else {
         setNotification({ open: true, message: result.error, severity: 'error' });
       }
@@ -156,6 +170,30 @@ function App() {
     }
   };
 
+  const loadKeyDetails = async (key) => {
+    try {
+      const details = await ipcRenderer.invoke('redis-get-details', key);
+      if (details.success) {
+        setKeyDetails(prev => ({
+          ...prev,
+          [key]: details.data
+        }));
+      }
+    } catch (error) {
+      console.error(`Error loading details for key ${key}:`, error);
+    }
+  };
+
+  useEffect(() => {
+    if (!currentConnection) return;
+    
+    const interval = setInterval(() => {
+      keys.forEach(loadKeyDetails);
+    }, 5000); // Refresh every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [currentConnection, keys]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -188,14 +226,15 @@ function App() {
         if (!editMode && !keys.includes(key)) {
           setKeys(prevKeys => [...prevKeys, key]);
         }
-        setNotification({ 
-          open: true, 
-          message: `Key ${editMode ? 'updated' : 'created'} successfully`, 
-          severity: 'success' 
+        setNotification({
+          open: true,
+          message: `Key ${editMode ? 'updated' : 'created'} successfully`,
+          severity: 'success'
         });
-        if (editMode) {
-          setEditMode(false);
-        }
+        // Load details for the new/updated key
+        await loadKeyDetails(key);
+        
+        setEditMode(false);
         setKey('');
         setValue('');
         setType('string');
@@ -221,6 +260,27 @@ function App() {
 
   const toggleLayout = () => {
     setIsReversedLayout(!isReversedLayout);
+  };
+
+  // Helper function to format TTL
+  const formatTTL = (ttl) => {
+    if (ttl === -1) return null;
+    if (ttl >= 86400) return `${Math.floor(ttl / 86400)}d`;
+    if (ttl >= 3600) return `${Math.floor(ttl / 3600)}h`;
+    if (ttl >= 60) return `${Math.floor(ttl / 60)}m`;
+    return `${ttl}s`;
+  };
+
+  // Helper function to get type color
+  const getTypeColor = (type) => {
+    switch (type) {
+      case 'string': return 'primary';
+      case 'list': return 'success';
+      case 'set': return 'info';
+      case 'zset': return 'warning';
+      case 'hash': return 'secondary';
+      default: return 'default';
+    }
   };
 
   if (!currentConnection) {
@@ -280,13 +340,59 @@ function App() {
               
               <List>
                 {keys.map((k) => (
-                  <ListItem key={k}>
-                    <ListItemText primary={k} />
+                  <ListItem
+                    key={k}
+                    sx={{
+                      borderBottom: '1px solid rgba(0, 0, 0, 0.12)',
+                      '&:hover': {
+                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                      },
+                    }}
+                  >
+                    <ListItemText
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography>{k}</Typography>
+                          {keyDetails[k] && (
+                            <Stack direction="row" spacing={1}>
+                              <Chip
+                                label={keyDetails[k].type}
+                                size="small"
+                                color={getTypeColor(keyDetails[k].type)}
+                              />
+                              {keyDetails[k].ttl > 0 && (
+                                <Chip
+                                  label={formatTTL(keyDetails[k].ttl)}
+                                  size="small"
+                                  variant="outlined"
+                                  color="default"
+                                />
+                              )}
+                              <Chip
+                                label={`${Math.round(keyDetails[k].memory / 1024)}KB`}
+                                size="small"
+                                variant="outlined"
+                                color="default"
+                              />
+                            </Stack>
+                          )}
+                        </Box>
+                      }
+                    />
                     <ListItemSecondaryAction>
-                      <IconButton edge="end" onClick={() => handleEdit(k)}>
+                      <IconButton
+                        edge="end"
+                        aria-label="edit"
+                        onClick={() => handleEdit(k)}
+                        sx={{ mr: 1 }}
+                      >
                         <EditIcon />
                       </IconButton>
-                      <IconButton edge="end" onClick={() => handleDelete(k)}>
+                      <IconButton
+                        edge="end"
+                        aria-label="delete"
+                        onClick={() => handleDelete(k)}
+                      >
                         <DeleteIcon />
                       </IconButton>
                     </ListItemSecondaryAction>
