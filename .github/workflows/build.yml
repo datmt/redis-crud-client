@@ -21,14 +21,22 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
+          cache: 'npm'
 
       - name: Install Dependencies
-        run: npm install
+        run: |
+          npm install
+          npm install -g electron-builder@latest
 
       - name: Build React App
         run: npm run build
         env:
           CI: false
+
+      - name: Copy Main Process Files
+        run: |
+          cp main.js build/
+        shell: bash
 
       - name: Build and Package Electron App
         env:

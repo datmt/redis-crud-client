@@ -20,14 +20,17 @@
     "appId": "com.redis.electron.client",
     "productName": "Redis Client",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "build/**/*",
       "main.js",
-      "preload.js",
       "node_modules/**/*"
     ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": ["dmg", "zip"]

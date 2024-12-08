@@ -1,22 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container,
+  Grid,
   Paper,
+  Typography,
   TextField,
   Button,
+  Box,
   List,
   ListItem,
   ListItemText,
   ListItemSecondaryAction,
   IconButton,
-  Typography,
-  Box,
-  Snackbar,
-  Alert,
-  AppBar,
-  Toolbar,
-  Grid,
-  Tooltip,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -24,13 +19,23 @@ import {
   DialogActions,
   CircularProgress,
   InputAdornment,
-  Link
+  Link,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Snackbar,
+  Alert,
+  AppBar,
+  Toolbar,
+  Tooltip
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
-import MoreIcon from '@mui/icons-material/MoreHoriz';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import MoreIcon from '@mui/icons-material/MoreVert';
 import ConnectionManager from './components/ConnectionManager';
 const { ipcRenderer } = window.require('electron');
 
@@ -38,6 +43,9 @@ function App() {
   const [keys, setKeys] = useState([]);
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
+  const [type, setType] = useState('string');
+  const [ttlType, setTtlType] = useState('none');
+  const [ttlValue, setTtlValue] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(true);
@@ -90,12 +98,35 @@ function App() {
     loadKeys(true);
   };
 
-  const handleEdit = async (keyToEdit) => {
+  const handleEdit = async (selectedKey) => {
     try {
-      const result = await ipcRenderer.invoke('redis-get', keyToEdit);
+      const result = await ipcRenderer.invoke('redis-get-details', selectedKey);
       if (result.success) {
-        setKey(keyToEdit);
-        setValue(result.data || '');
+        setKey(selectedKey);
+        setValue(result.data.value);
+        setType(result.data.type);
+        
+        // Handle TTL
+        const ttl = result.data.ttl;
+        if (ttl === -1) {
+          setTtlType('none');
+          setTtlValue('');
+        } else {
+          if (ttl >= 86400) {
+            setTtlType('days');
+            setTtlValue(Math.floor(ttl / 86400));
+          } else if (ttl >= 3600) {
+            setTtlType('hours');
+            setTtlValue(Math.floor(ttl / 3600));
+          } else if (ttl >= 60) {
+            setTtlType('minutes');
+            setTtlValue(Math.floor(ttl / 60));
+          } else {
+            setTtlType('seconds');
+            setTtlValue(ttl);
+          }
+        }
+        
         setEditMode(true);
       } else {
         setNotification({ open: true, message: result.error, severity: 'error' });
@@ -128,12 +159,31 @@ function App() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      if (!key || !value) {
-        setNotification({ open: true, message: 'Both key and value are required', severity: 'error' });
+      if (!key) {
+        setNotification({ open: true, message: 'Key is required', severity: 'error' });
         return;
       }
 
-      const result = await ipcRenderer.invoke('redis-set', { key, value });
+      // Calculate TTL in seconds
+      let ttl = -1;
+      if (ttlType !== 'none' && ttlValue) {
+        switch (ttlType) {
+          case 'days':
+            ttl = parseInt(ttlValue) * 86400;
+            break;
+          case 'hours':
+            ttl = parseInt(ttlValue) * 3600;
+            break;
+          case 'minutes':
+            ttl = parseInt(ttlValue) * 60;
+            break;
+          case 'seconds':
+            ttl = parseInt(ttlValue);
+            break;
+        }
+      }
+
+      const result = await ipcRenderer.invoke('redis-set', { key, value, type, ttl });
       if (result.success) {
         if (!editMode && !keys.includes(key)) {
           setKeys(prevKeys => [...prevKeys, key]);
@@ -148,6 +198,9 @@ function App() {
         }
         setKey('');
         setValue('');
+        setType('string');
+        setTtlType('none');
+        setTtlValue('');
       } else {
         setNotification({ open: true, message: result.error, severity: 'error' });
       }
@@ -273,15 +326,204 @@ function App() {
                   disabled={editMode}
                   margin="normal"
                 />
-                <TextField
-                  fullWidth
-                  label="Value"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  margin="normal"
-                  multiline
-                  rows={4}
-                />
+
+                <FormControl fullWidth margin="normal">
+                  <InputLabel>Data Type</InputLabel>
+                  <Select
+                    value={type}
+                    onChange={(e) => setType(e.target.value)}
+                    disabled={editMode}
+                  >
+                    <MenuItem value="string">String</MenuItem>
+                    <MenuItem value="list">List</MenuItem>
+                    <MenuItem value="set">Set</MenuItem>
+                    <MenuItem value="zset">Sorted Set</MenuItem>
+                    <MenuItem value="hash">Hash</MenuItem>
+                  </Select>
+                </FormControl>
+
+                {type === 'string' && (
+                  <TextField
+                    fullWidth
+                    label="Value"
+                    value={typeof value === 'string' ? value : ''}
+                    onChange={(e) => setValue(e.target.value)}
+                    margin="normal"
+                    multiline
+                    rows={4}
+                  />
+                )}
+
+                {type === 'list' && (
+                  <Box sx={{ mt: 2 }}>
+                    {Array.isArray(value) ? value.map((item, index) => (
+                      <Box key={index} sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                        <TextField
+                          fullWidth
+                          label={`Item ${index + 1}`}
+                          value={item}
+                          onChange={(e) => {
+                            const newValue = [...value];
+                            newValue[index] = e.target.value;
+                            setValue(newValue);
+                          }}
+                        />
+                        <IconButton onClick={() => {
+                          setValue(value.filter((_, i) => i !== index));
+                        }}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </Box>
+                    )) : null}
+                    <Button
+                      startIcon={<AddIcon />}
+                      onClick={() => setValue([...(Array.isArray(value) ? value : []), ''])}
+                    >
+                      Add Item
+                    </Button>
+                  </Box>
+                )}
+
+                {type === 'set' && (
+                  <Box sx={{ mt: 2 }}>
+                    {Array.isArray(value) ? value.map((item, index) => (
+                      <Box key={index} sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                        <TextField
+                          fullWidth
+                          label={`Member ${index + 1}`}
+                          value={item}
+                          onChange={(e) => {
+                            const newValue = [...value];
+                            newValue[index] = e.target.value;
+                            setValue(newValue);
+                          }}
+                        />
+                        <IconButton onClick={() => {
+                          setValue(value.filter((_, i) => i !== index));
+                        }}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </Box>
+                    )) : null}
+                    <Button
+                      startIcon={<AddIcon />}
+                      onClick={() => setValue([...(Array.isArray(value) ? value : []), ''])}
+                    >
+                      Add Member
+                    </Button>
+                  </Box>
+                )}
+
+                {type === 'zset' && (
+                  <Box sx={{ mt: 2 }}>
+                    {Array.isArray(value) ? value.map((item, index) => (
+                      <Box key={index} sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                        <TextField
+                          sx={{ flexGrow: 1 }}
+                          label={`Member ${index + 1}`}
+                          value={item.member}
+                          onChange={(e) => {
+                            const newValue = [...value];
+                            newValue[index] = { ...item, member: e.target.value };
+                            setValue(newValue);
+                          }}
+                        />
+                        <TextField
+                          sx={{ width: 120 }}
+                          label="Score"
+                          type="number"
+                          value={item.score}
+                          onChange={(e) => {
+                            const newValue = [...value];
+                            newValue[index] = { ...item, score: e.target.value };
+                            setValue(newValue);
+                          }}
+                        />
+                        <IconButton onClick={() => {
+                          setValue(value.filter((_, i) => i !== index));
+                        }}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </Box>
+                    )) : null}
+                    <Button
+                      startIcon={<AddIcon />}
+                      onClick={() => setValue([...(Array.isArray(value) ? value : []), { member: '', score: 0 }])}
+                    >
+                      Add Member
+                    </Button>
+                  </Box>
+                )}
+
+                {type === 'hash' && (
+                  <Box sx={{ mt: 2 }}>
+                    {value && typeof value === 'object' ? Object.entries(value).map(([field, val], index) => (
+                      <Box key={index} sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                        <TextField
+                          sx={{ flexGrow: 1 }}
+                          label="Field"
+                          value={field}
+                          onChange={(e) => {
+                            const newValue = { ...value };
+                            delete newValue[field];
+                            newValue[e.target.value] = val;
+                            setValue(newValue);
+                          }}
+                        />
+                        <TextField
+                          sx={{ flexGrow: 1 }}
+                          label="Value"
+                          value={val}
+                          onChange={(e) => {
+                            setValue({
+                              ...value,
+                              [field]: e.target.value
+                            });
+                          }}
+                        />
+                        <IconButton onClick={() => {
+                          const newValue = { ...value };
+                          delete newValue[field];
+                          setValue(newValue);
+                        }}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </Box>
+                    )) : null}
+                    <Button
+                      startIcon={<AddIcon />}
+                      onClick={() => setValue({ ...value, '': '' })}
+                    >
+                      Add Field
+                    </Button>
+                  </Box>
+                )}
+
+                <FormControl fullWidth margin="normal">
+                  <InputLabel>TTL</InputLabel>
+                  <Select
+                    value={ttlType}
+                    onChange={(e) => setTtlType(e.target.value)}
+                  >
+                    <MenuItem value="none">No Expiration</MenuItem>
+                    <MenuItem value="seconds">Seconds</MenuItem>
+                    <MenuItem value="minutes">Minutes</MenuItem>
+                    <MenuItem value="hours">Hours</MenuItem>
+                    <MenuItem value="days">Days</MenuItem>
+                  </Select>
+                </FormControl>
+
+                {ttlType !== 'none' && (
+                  <TextField
+                    fullWidth
+                    label={`Time to live (in ${ttlType})`}
+                    type="number"
+                    value={ttlValue}
+                    onChange={(e) => setTtlValue(e.target.value)}
+                    margin="normal"
+                  />
+                )}
+
                 <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
                   <Button
                     type="submit"
@@ -297,6 +539,9 @@ function App() {
                         setEditMode(false);
                         setKey('');
                         setValue('');
+                        setType('string');
+                        setTtlType('none');
+                        setTtlValue('');
                       }}
                     >
                       Cancel

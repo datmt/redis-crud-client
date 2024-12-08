@@ -141,10 +141,107 @@ ipcMain.handle('redis-get', async (event, key) => {
   }
 });
 
-ipcMain.handle('redis-set', async (event, { key, value }) => {
+ipcMain.handle('redis-get-details', async (event, key) => {
   try {
     if (!redis) throw new Error('Not connected to Redis');
-    await redis.set(key, value);
+    
+    // Get value and type
+    const type = await redis.type(key);
+    let value;
+    let members;
+    let fields;
+    
+    switch(type) {
+      case 'string':
+        value = await redis.get(key);
+        break;
+      case 'list':
+        value = await redis.lrange(key, 0, -1);
+        break;
+      case 'set':
+        value = await redis.smembers(key);
+        break;
+      case 'zset':
+        members = await redis.zrange(key, 0, -1, 'WITHSCORES');
+        value = [];
+        for (let i = 0; i < members.length; i += 2) {
+          value.push({ member: members[i], score: parseFloat(members[i + 1]) });
+        }
+        break;
+      case 'hash':
+        fields = await redis.hgetall(key);
+        value = fields;
+        break;
+      default:
+        value = null;
+    }
+
+    // Get TTL
+    const ttl = await redis.ttl(key);
+    
+    // Get memory usage
+    const memory = await redis.memory('USAGE', key);
+
+    return { 
+      success: true, 
+      data: {
+        type,
+        value,
+        ttl,
+        memory
+      }
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('redis-set', async (event, { key, value, type, ttl }) => {
+  try {
+    if (!redis) throw new Error('Not connected to Redis');
+
+    // Set value based on type
+    switch(type) {
+      case 'string':
+        await redis.set(key, value);
+        break;
+      case 'list':
+        await redis.del(key); // Clear existing list
+        if (Array.isArray(value) && value.length > 0) {
+          await redis.rpush(key, ...value);
+        }
+        break;
+      case 'set':
+        await redis.del(key); // Clear existing set
+        if (Array.isArray(value) && value.length > 0) {
+          await redis.sadd(key, ...value);
+        }
+        break;
+      case 'zset':
+        await redis.del(key); // Clear existing sorted set
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            await redis.zadd(key, item.score, item.member);
+          }
+        }
+        break;
+      case 'hash':
+        await redis.del(key); // Clear existing hash
+        if (typeof value === 'object' && value !== null) {
+          await redis.hmset(key, value);
+        }
+        break;
+      default:
+        throw new Error('Unsupported Redis data type');
+    }
+
+    // Set TTL if specified
+    if (ttl > 0) {
+      await redis.expire(key, ttl);
+    } else if (ttl === -1) {
+      await redis.persist(key); // Remove TTL
+    }
+
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -185,6 +282,37 @@ ipcMain.handle('redis-search', async (event, pattern) => {
     } while (cursor !== '0');
 
     return { success: true, data: keys };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('redis-connect', async (event, { host, port, password }) => {
+  try {
+    redis = new Redis({
+      host,
+      port,
+      password: password || undefined,
+      retryStrategy: (times) => {
+        const delay = Math.min(times * 50, 2000);
+        return delay;
+      }
+    });
+
+    await redis.ping();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('redis-disconnect', async () => {
+  try {
+    if (redis) {
+      await redis.quit();
+      redis = null;
+    }
+    return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
   }
