@@ -1,6 +1,10 @@
 {
   "name": "redis-electron-client",
   "version": "1.0.0",
+  "author": {
+    "name": "datmt",
+    "email": "dat.tm240@gmail.com"
+  },
   "description": "CRUD Redis Client built with Electron and React",
   "main": "main.js",
   "scripts": {
@@ -33,13 +37,23 @@
     },
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": ["dmg", "zip"]
+      "target": [
+        "dmg",
+        "zip"
+      ]
     },
     "win": {
-      "target": ["nsis", "portable"]
+      "target": [
+        "nsis",
+        "portable"
+      ]
     },
     "linux": {
-      "target": ["AppImage", "deb", "rpm"],
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
       "category": "Development"
     }
   },
@@ -70,5 +84,6 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  }
+  },
+  "license": "MIT"
 }
